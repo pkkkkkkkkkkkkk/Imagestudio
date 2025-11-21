@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Studio - Edit, Merge, Create</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* Slate 900 */
+            color: #e2e8f0; /* Slate 200 */
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569; 
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b; 
+        }
+
+        .canvas-container {
+            background-image: 
+                linear-gradient(45deg, #1e293b 25%, transparent 25%), 
+                linear-gradient(-45deg, #1e293b 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #1e293b 75%), 
+                linear-gradient(-45deg, transparent 75%, #1e293b 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+
+        .tool-btn {
+            transition: all 0.2s;
+        }
+        .tool-btn.active {
+            background-color: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+
+        .unit-toggle.active {
+            background-color: #3b82f6;
+            color: white;
+        }
+        
+        input[type="range"] {
+            accent-color: #3b82f6;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-slate-800 border-b border-slate-700 px-6 py-3 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-2">
+            <i data-lucide="image-plus" class="text-blue-400 h-6 w-6"></i>
+            <h1 class="text-lg font-bold text-white">Image Studio <span class="text-xs bg-blue-900 text-blue-200 px-2 py-0.5 rounded ml-2">v3.3</span></h1>
+        </div>
+        <div class="flex gap-3">
+            <button onclick="window.location.reload()" class="flex items-center justify-center w-9 h-9 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 transition-colors" title="Reset / Refresh">
+                <i data-lucide="rotate-cw" class="h-4 w-4"></i>
+            </button>
+            <button onclick="document.getElementById('fileInput').click()" class="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium transition-colors">
+                <i data-lucide="upload" class="h-4 w-4"></i> Load Image
+            </button>
+            <button onclick="downloadImage()" class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors">
+                <i data-lucide="download" class="h-4 w-4"></i> Save
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Layout -->
+    <div class="flex flex-1 overflow-hidden">
+        
+        <!-- Sidebar Tools -->
+        <aside class="w-80 bg-slate-800 border-r border-slate-700 flex flex-col overflow-y-auto shrink-0 z-20 shadow-xl">
+            
+            <!-- Mode Selector -->
+            <div class="p-4 grid grid-cols-3 gap-2 border-b border-slate-700">
+                <button onclick="setMode('resize')" id="btn-resize" class="tool-btn active flex flex-col items-center gap-1 p-2 rounded-lg border border-slate-600 hover:bg-slate-700 text-xs">
+                    <i data-lucide="move-diagonal-2" class="h-5 w-5 mb-1"></i> Resize
+                </button>
+                <button onclick="setMode('merge')" id="btn-merge" class="tool-btn flex flex-col items-center gap-1 p-2 rounded-lg border border-slate-600 hover:bg-slate-700 text-xs">
+                    <i data-lucide="combine" class="h-5 w-5 mb-1"></i> Join
+                </button>
+                <button onclick="setMode('bubble')" id="btn-bubble" class="tool-btn flex flex-col items-center gap-1 p-2 rounded-lg border border-slate-600 hover:bg-slate-700 text-xs">
+                    <i data-lucide="message-circle" class="h-5 w-5 mb-1"></i> Bubble
+                </button>
+            </div>
+
+            <!-- Controls Area -->
+            <div class="p-4 flex-1">
+                
+                <!-- Resize Controls -->
+                <div id="controls-resize" class="space-y-6">
+                    
+                    <!-- Single vs Batch Toggle -->
+                    <div class="bg-slate-900 p-1 rounded-lg flex">
+                        <button onclick="setResizeMode('single')" id="rm-single" class="flex-1 py-1.5 text-xs font-medium rounded text-white bg-slate-700 shadow transition-all">Single Editor</button>
+                        <button onclick="setResizeMode('batch')" id="rm-batch" class="flex-1 py-1.5 text-xs font-medium rounded text-slate-400 hover:text-white transition-all">Batch (Bulk)</button>
+                    </div>
+
+                    <!-- SINGLE MODE -->
+                    <div id="resize-single-panel">
+                        <div class="space-y-2">
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-xs font-medium text-slate-400 uppercase">Dimensions</label>
+                                <div class="flex bg-slate-900 rounded p-0.5">
+                                    <button onclick="setResizeUnit('px')" id="unit-px" class="unit-toggle active px-2 py-0.5 text-[10px] rounded">PX</button>
+                                    <button onclick="setResizeUnit('pct')" id="unit-pct" class="unit-toggle px-2 py-0.5 text-[10px] rounded text-slate-400">%</button>
+                                </div>
+                            </div>
+
+                            <!-- Pixel Inputs -->
+                            <div id="inputs-px" class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="text-xs text-slate-500 mb-1 block">Width</label>
+                                    <input type="number" id="resizeW" class="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm focus:border-blue-500 outline-none" oninput="updateResize('w')">
+                                </div>
+                                <div>
+                                    <label class="text-xs text-slate-500 mb-1 block">Height</label>
+                                    <input type="number" id="resizeH" class="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm focus:border-blue-500 outline-none" oninput="updateResize('h')">
+                                </div>
+                            </div>
+
+                            <!-- Percent Inputs -->
+                            <div id="inputs-pct" class="hidden space-y-2">
+                                <div class="flex justify-between">
+                                    <label class="text-xs text-slate-500">Scale Percentage</label>
+                                    <span class="text-xs text-blue-400" id="pct-display">100%</span>
+                                </div>
+                                <input type="range" id="resizePct" min="1" max="200" value="100" class="w-full h-1 bg-slate-600 rounded appearance-none" oninput="updateResize('pct')">
+                            </div>
+
+                            <label class="flex items-center gap-2 mt-2 cursor-pointer">
+                                <input type="checkbox" id="maintainAspect" checked class="rounded bg-slate-900 border-slate-600 text-blue-500">
+                                <span class="text-sm text-slate-300">Maintain Aspect Ratio</span>
+                            </label>
+                            <button onclick="applyResize()" class="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/50 rounded text-sm mt-2">Apply Resize</button>
+                        </div>
+
+                        <div class="space-y-4 pt-4 border-t border-slate-700">
+                            <label class="text-xs font-medium text-slate-400 uppercase">Adjustments</label>
+                            <div>
+                                <div class="flex justify-between mb-1">
+                                    <span class="text-xs text-slate-400">Brightness</span>
+                                    <span id="val-bright" class="text-xs text-slate-400">0</span>
+                                </div>
+                                <input type="range" id="filter-bright" min="-100" max="100" value="0" class="w-full h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer" oninput="render()">
+                            </div>
+                            <div>
+                                <div class="flex justify-between mb-1">
+                                    <span class="text-xs text-slate-400">Contrast</span>
+                                    <span id="val-contrast" class="text-xs text-slate-400">0</span>
+                                </div>
+                                <input type="range" id="filter-contrast" min="-100" max="100" value="0" class="w-full h-1 bg-slate-600 rounded-lg appearance-none cursor-pointer" oninput="render()">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BATCH MODE -->
+                    <div id="resize-batch-panel" class="hidden space-y-4">
+                        <div class="p-4 border-2 border-dashed border-slate-600 rounded-lg text-center hover:bg-slate-700/30 transition-colors cursor-pointer" onclick="document.getElementById('batchInput').click()">
+                            <i data-lucide="files" class="w-8 h-8 text-slate-400 mx-auto mb-2"></i>
+                            <p class="text-sm text-slate-300">Click to select multiple files</p>
+                            <p class="text-xs text-slate-500 mt-1" id="batch-count">0 files selected</p>
+                        </div>
+                        
+                        <!-- Batch Settings -->
+                        <div class="space-y-3">
+                            <label class="text-xs font-medium text-slate-400 uppercase">Batch Settings</label>
+                            
+                            <div>
+                                <label class="text-xs text-slate-500 mb-1 block">Resize Scale (%)</label>
+                                <input type="range" id="batchScale" min="10" max="100" value="50" class="w-full h-1 bg-slate-600 rounded mb-1" oninput="document.getElementById('batch-scale-val').innerText = this.value + '%'">
+                                <div class="text-right text-xs text-blue-400" id="batch-scale-val">50%</div>
+                            </div>
+                            
+                            <button onclick="processBatch()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-sm font-medium">Process All Images</button>
+                        </div>
+
+                        <!-- Batch Results List -->
+                        <div id="batch-results" class="space-y-2 max-h-64 overflow-y-auto">
+                            <!-- Results injected here -->
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Merge Controls -->
+                <div id="controls-merge" class="space-y-6 hidden">
+                    <div class="p-3 bg-slate-700/50 rounded border border-slate-600">
+                        <p id="mergeStep1" class="text-sm text-slate-300 mb-3">1. Load main image first.</p>
+                        <p id="mergeStep2" class="text-sm text-slate-300 mb-3">2. Load secondary image to join.</p>
+                        <div class="flex gap-2">
+                            <button id="btn-add-img2" onclick="document.getElementById('mergeInput').click()" class="flex-1 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded text-sm flex justify-center gap-2 items-center disabled:opacity-50 disabled:cursor-not-allowed">
+                                <i data-lucide="plus" class="h-4 w-4"></i> Add Image 2
+                            </button>
+                            <button onclick="invertImages()" id="btn-invert" disabled class="px-3 py-2 bg-slate-700 text-slate-400 rounded text-sm flex justify-center items-center disabled:opacity-50 disabled:cursor-not-allowed hover:text-white transition-colors" title="Invert Order">
+                                <i data-lucide="arrow-left-right" class="h-4 w-4"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <label class="text-xs font-medium text-slate-400 uppercase">Direction</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="setMergeDir('horizontal')" id="merge-h" class="p-2 bg-blue-600 text-white rounded text-sm text-center border border-transparent">Side by Side</button>
+                            <button onclick="setMergeDir('vertical')" id="merge-v" class="p-2 bg-slate-700 text-slate-300 rounded text-sm text-center border border-slate-600 hover:bg-slate-600">Stacked</button>
+                        </div>
+                    </div>
+                    
+                    <button onclick="applyMerge()" id="btn-confirm-merge" disabled class="w-full py-2 bg-slate-800 text-slate-500 border border-slate-700 rounded text-sm cursor-not-allowed transition-all">Confirm Merge</button>
+                </div>
+
+                <!-- Bubble Controls -->
+                <div id="controls-bubble" class="space-y-6 hidden">
+                    <div class="space-y-2">
+                        <label class="text-xs font-medium text-slate-400 uppercase">Bubble Text</label>
+                        <textarea id="bubbleText" rows="3" class="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm focus:border-blue-500 outline-none" placeholder="Type something..." oninput="render()">OMG! No Way!</textarea>
+                    </div>
+
+                    <div class="space-y-2">
+                        <label class="text-xs font-medium text-slate-400 uppercase">Tail Direction</label>
+                        <div class="grid grid-cols-3 gap-1">
+                             <button onclick="setTailDirection('left')" id="tail-left" class="p-2 bg-slate-700 text-slate-300 hover:bg-slate-600 rounded text-xs flex flex-col items-center gap-1 border border-slate-600">
+                                <i data-lucide="corner-left-down" class="w-4 h-4"></i> Left
+                             </button>
+                             <button onclick="setTailDirection('none')" id="tail-none" class="p-2 bg-slate-700 text-slate-300 hover:bg-slate-600 rounded text-xs flex flex-col items-center gap-1 border border-slate-600">
+                                <i data-lucide="square" class="w-4 h-4"></i> None
+                             </button>
+                             <button onclick="setTailDirection('right')" id="tail-right" class="p-2 bg-blue-600 text-white rounded text-xs flex flex-col items-center gap-1 border border-transparent">
+                                <i data-lucide="corner-right-down" class="w-4 h-4"></i> Right
+                             </button>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                         <label class="text-xs font-medium text-slate-400 uppercase">Style</label>
+                         <div class="grid grid-cols-2 gap-2">
+                            <div>
+                                <label class="text-xs text-slate-500">Size</label>
+                                <input type="range" id="bubbleSize" min="10" max="80" value="30" class="w-full h-1 bg-slate-600 rounded mt-2" oninput="render()">
+                            </div>
+                            <div>
+                                <label class="text-xs text-slate-500">Padding</label>
+                                <input type="range" id="bubblePadding" min="5" max="40" value="20" class="w-full h-1 bg-slate-600 rounded mt-2" oninput="render()">
+                            </div>
+                         </div>
+                    </div>
+
+                    <button onclick="addAnotherBubble()" class="w-full py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded text-sm mt-4">Stamp & Add Another</button>
+                </div>
+
+            </div>
+        </aside>
+
+        <!-- Canvas Area -->
+        <main class="flex-1 bg-slate-900 relative flex items-center justify-center overflow-hidden canvas-container" id="dropZone">
+            <div id="emptyState" class="text-center">
+                <i data-lucide="image" class="w-16 h-16 text-slate-600 mx-auto mb-4"></i>
+                <p class="text-slate-400 text-lg font-medium">No Image Loaded</p>
+                <p class="text-slate-500 text-sm mt-1">Upload an image to start editing</p>
+            </div>
+            
+            <canvas id="editor" class="shadow-2xl hidden cursor-crosshair"></canvas>
+
+            <!-- Image Stats Overlay -->
+            <div id="imageStats" class="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-800/90 backdrop-blur-sm px-5 py-2.5 rounded-full border border-slate-700 flex items-center gap-4 text-xs font-medium text-slate-300 shadow-xl transition-all duration-300 opacity-0 translate-y-4 pointer-events-none">
+                <span class="flex items-center gap-2" title="Dimensions">
+                    <i data-lucide="ruler" class="w-3.5 h-3.5 text-blue-400"></i> 
+                    <span id="stat-dim">0 x 0</span>
+                </span>
+                <span class="w-px h-3 bg-slate-600"></span>
+                <span class="flex items-center gap-2" title="Resolution">
+                    <i data-lucide="grid" class="w-3.5 h-3.5 text-emerald-400"></i> 
+                    <span id="stat-res">0 MP</span>
+                </span>
+                <span class="w-px h-3 bg-slate-600"></span>
+                <span class="flex items-center gap-2" title="Estimated PNG Size">
+                    <i data-lucide="hard-drive" class="w-3.5 h-3.5 text-amber-400"></i> 
+                    <span id="stat-size">Analyzing...</span>
+                </span>
+            </div>
+        </main>
+    </div>
+
+    <!-- Hidden Inputs -->
+    <input type="file" id="fileInput" accept="image/*" class="hidden">
+    <input type="file" id="mergeInput" accept="image/*" class="hidden">
+    <input type="file" id="batchInput" accept="image/*" multiple class="hidden">
+
+    <script>
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        // State
+        const state = {
+            img: null, // The main Image object
+            img2: null, // Secondary image for merging
+            mode: 'resize', // resize, merge, bubble
+            resizeMode: 'single', // single, batch
+            resizeUnit: 'px', // px, pct
+            canvas: document.getElementById('editor'),
+            ctx: document.getElementById('editor').getContext('2d'),
+            
+            // Resize State
+            originalW: 0,
+            originalH: 0,
+            
+            // Merge State
+            mergeDirection: 'horizontal',
+            mergeLocked: false,
+            
+            // Bubble State
+            bubbleX: 0.5, 
+            bubbleY: 0.3,
+            tailDirection: 'right', // left, right, none
+            isDragging: false,
+            
+            // Performance
+            statsTimeout: null
+        };
+
+        // Initialization
+        const fileInput = document.getElementById('fileInput');
+        const mergeInput = document.getElementById('mergeInput');
+        const batchInput = document.getElementById('batchInput');
+        const dropZone = document.getElementById('dropZone');
+
+        // --- Event Listeners ---
+
+        fileInput.addEventListener('change', (e) => handleImageUpload(e.target.files[0]));
+        mergeInput.addEventListener('change', (e) => handleMergeUpload(e.target.files[0]));
+        batchInput.addEventListener('change', (e) => handleBatchSelect(e.target.files));
+
+        // Drag and Drop
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('bg-slate-800'); });
+        dropZone.addEventListener('dragleave', (e) => { e.preventDefault(); dropZone.classList.remove('bg-slate-800'); });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('bg-slate-800');
+            if (e.dataTransfer.files.length) handleImageUpload(e.dataTransfer.files[0]);
+        });
+
+        // Canvas Interaction
+        state.canvas.addEventListener('mousedown', handleMouseDown);
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        state.canvas.addEventListener('touchstart', (e) => handleMouseDown(e.touches[0]));
+        window.addEventListener('touchmove', (e) => handleMouseMove(e.touches[0]));
+        window.addEventListener('touchend', handleMouseUp);
+
+
+        // --- Core Functions ---
+
+        function handleImageUpload(file) {
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    state.img = img;
+                    state.originalW = img.width;
+                    state.originalH = img.height;
+                    
+                    document.getElementById('filter-bright').value = 0;
+                    document.getElementById('filter-contrast').value = 0;
+
+                    // Reset resize UI
+                    document.getElementById('resizeW').value = img.width;
+                    document.getElementById('resizeH').value = img.height;
+                    document.getElementById('resizePct').value = 100;
+                    updateResize('pct-reset'); // Ensure inputs sync
+
+                    document.getElementById('emptyState').classList.add('hidden');
+                    state.canvas.classList.remove('hidden');
+
+                    checkMergeState();
+                    render();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function handleMergeUpload(file) {
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    state.img2 = img;
+                    checkMergeState();
+                    render();
+                    showToast("Second image loaded!");
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function checkMergeState() {
+            const step1 = document.getElementById('mergeStep1');
+            const step2 = document.getElementById('mergeStep2');
+            const confirmBtn = document.getElementById('btn-confirm-merge');
+            const invertBtn = document.getElementById('btn-invert');
+            const addImg2Btn = document.getElementById('btn-add-img2');
+
+            // Step 1 UI
+            if (state.img) {
+                step1.innerText = "1. Main image loaded ✅";
+                step1.className = "text-sm text-emerald-400 mb-3";
+            } else {
+                step1.innerText = "1. Load main image first.";
+                step1.className = "text-sm text-slate-300 mb-3";
+            }
+
+            // Step 2 UI
+            if (state.img2) {
+                step2.innerText = "2. Secondary image loaded ✅";
+                step2.className = "text-sm text-emerald-400 mb-3";
+                addImg2Btn.disabled = true; // Disable Add button
+            } else if (state.mergeLocked) {
+                step2.innerText = "2. Merge Completed (Refresh to reset)";
+                step2.className = "text-sm text-slate-500 mb-3";
+                addImg2Btn.disabled = true;
+            } else {
+                step2.innerText = "2. Load secondary image to join.";
+                step2.className = "text-sm text-slate-300 mb-3";
+                addImg2Btn.disabled = false; // Enable Add button
+            }
+
+            // Enable/Disable Actions
+            if (state.img && state.img2) {
+                confirmBtn.disabled = false;
+                confirmBtn.className = "w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white border border-transparent rounded text-sm font-medium transition-all shadow-lg shadow-emerald-900/20";
+                
+                invertBtn.disabled = false;
+                invertBtn.classList.remove('text-slate-400');
+                invertBtn.classList.add('text-white', 'bg-slate-600');
+            } else {
+                confirmBtn.disabled = true;
+                confirmBtn.className = "w-full py-2 bg-slate-800 text-slate-500 border border-slate-700 rounded text-sm cursor-not-allowed transition-all";
+                
+                invertBtn.disabled = true;
+                invertBtn.classList.add('text-slate-400');
+                invertBtn.classList.remove('text-white', 'bg-slate-600');
+            }
+        }
+
+        function invertImages() {
+            if(!state.img || !state.img2) return;
+            
+            // Swap
+            const temp = state.img;
+            state.img = state.img2;
+            state.img2 = temp;
+            
+            // Update Metadata for new main image
+            state.originalW = state.img.width;
+            state.originalH = state.img.height;
+            
+            // Update UI to reflect new main image
+            document.getElementById('resizeW').value = state.img.width;
+            document.getElementById('resizeH').value = state.img.height;
+            
+            render();
+            showToast("Images swapped!");
+        }
+
+        // --- Mode Switching ---
+
+        function setMode(mode) {
+            state.mode = mode;
+            document.querySelectorAll('.tool-btn').forEach(b => {
+                b.classList.remove('active', 'bg-blue-600', 'text-white', 'border-blue-600');
+                b.classList.add('border-slate-600');
+            });
+            const activeBtn = document.getElementById('btn-' + mode);
+            activeBtn.classList.add('active');
+            activeBtn.classList.remove('border-slate-600');
+
+            document.getElementById('controls-resize').classList.add('hidden');
+            document.getElementById('controls-merge').classList.add('hidden');
+            document.getElementById('controls-bubble').classList.add('hidden');
+            document.getElementById('controls-' + mode).classList.remove('hidden');
+            render();
+        }
+
+        function setResizeMode(mode) {
+            state.resizeMode = mode;
+            const sBtn = document.getElementById('rm-single');
+            const bBtn = document.getElementById('rm-batch');
+            const sPanel = document.getElementById('resize-single-panel');
+            const bPanel = document.getElementById('resize-batch-panel');
+
+            if (mode === 'single') {
+                sBtn.className = 'flex-1 py-1.5 text-xs font-medium rounded text-white bg-slate-700 shadow transition-all';
+                bBtn.className = 'flex-1 py-1.5 text-xs font-medium rounded text-slate-400 hover:text-white transition-all';
+                sPanel.classList.remove('hidden');
+                bPanel.classList.add('hidden');
+            } else {
+                bBtn.className = 'flex-1 py-1.5 text-xs font-medium rounded text-white bg-slate-700 shadow transition-all';
+                sBtn.className = 'flex-1 py-1.5 text-xs font-medium rounded text-slate-400 hover:text-white transition-all';
+                bPanel.classList.remove('hidden');
+                sPanel.classList.add('hidden');
+            }
+        }
+
+        function setResizeUnit(unit) {
+            state.resizeUnit = unit;
+            const pxBtn = document.getElementById('unit-px');
+            const pctBtn = document.getElementById('unit-pct');
+            const pxInputs = document.getElementById('inputs-px');
+            const pctInputs = document.getElementById('inputs-pct');
+
+            if (unit === 'px') {
+                pxBtn.classList.add('active', 'bg-blue-600', 'text-white');
+                pxBtn.classList.remove('text-slate-400');
+                pctBtn.classList.remove('active', 'bg-blue-600', 'text-white');
+                pctBtn.classList.add('text-slate-400');
+                pxInputs.classList.remove('hidden');
+                pctInputs.classList.add('hidden');
+            } else {
+                pctBtn.classList.add('active', 'bg-blue-600', 'text-white');
+                pctBtn.classList.remove('text-slate-400');
+                pxBtn.classList.remove('active', 'bg-blue-600', 'text-white');
+                pxBtn.classList.add('text-slate-400');
+                pctInputs.classList.remove('hidden');
+                pxInputs.classList.add('hidden');
+            }
+        }
+
+        function setMergeDir(dir) {
+            state.mergeDirection = dir;
+            const hBtn = document.getElementById('merge-h');
+            const vBtn = document.getElementById('merge-v');
+            
+            if(dir === 'horizontal') {
+                hBtn.classList.add('bg-blue-600', 'text-white', 'border-transparent');
+                hBtn.classList.remove('bg-slate-700', 'text-slate-300', 'border-slate-600');
+                vBtn.classList.remove('bg-blue-600', 'text-white', 'border-transparent');
+                vBtn.classList.add('bg-slate-700', 'text-slate-300', 'border-slate-600');
+            } else {
+                vBtn.classList.add('bg-blue-600', 'text-white', 'border-transparent');
+                vBtn.classList.remove('bg-slate-700', 'text-slate-300', 'border-slate-600');
+                hBtn.classList.remove('bg-blue-600', 'text-white', 'border-transparent');
+                hBtn.classList.add('bg-slate-700', 'text-slate-300', 'border-slate-600');
+            }
+            render();
+        }
+
+        function setTailDirection(dir) {
+            state.tailDirection = dir;
+            const btns = ['tail-left', 'tail-none', 'tail-right'];
+            
+            btns.forEach(id => {
+                const btn = document.getElementById(id);
+                if(id === `tail-${dir}`) {
+                    btn.className = "p-2 bg-blue-600 text-white rounded text-xs flex flex-col items-center gap-1 border border-transparent";
+                } else {
+                    btn.className = "p-2 bg-slate-700 text-slate-300 hover:bg-slate-600 rounded text-xs flex flex-col items-center gap-1 border border-slate-600";
+                }
+            });
+            render();
+        }
+
+        // --- Rendering & Logic ---
+
+        function render() {
+            if (!state.img) return;
+            const canvas = state.canvas;
+            const ctx = state.ctx;
+            
+            const brightness = parseInt(document.getElementById('filter-bright').value);
+            const contrast = parseInt(document.getElementById('filter-contrast').value);
+            document.getElementById('val-bright').innerText = brightness;
+            document.getElementById('val-contrast').innerText = contrast;
+
+            let w = state.img.width;
+            let h = state.img.height;
+
+            if (state.mode === 'merge' && state.img2) {
+                if (state.mergeDirection === 'horizontal') {
+                    const scale2 = h / state.img2.height;
+                    const w2 = state.img2.width * scale2;
+                    canvas.width = w + w2;
+                    canvas.height = h;
+                    applyFilters(ctx, brightness, contrast);
+                    ctx.drawImage(state.img, 0, 0, w, h);
+                    ctx.filter = 'none'; 
+                    ctx.drawImage(state.img2, w, 0, w2, h);
+                } else {
+                    const scale2 = w / state.img2.width;
+                    const h2 = state.img2.height * scale2;
+                    canvas.width = w;
+                    canvas.height = h + h2;
+                    applyFilters(ctx, brightness, contrast);
+                    ctx.drawImage(state.img, 0, 0, w, h);
+                    ctx.filter = 'none'; 
+                    ctx.drawImage(state.img2, 0, h, w, h2);
+                }
+            } else {
+                canvas.width = w;
+                canvas.height = h;
+                applyFilters(ctx, brightness, contrast);
+                ctx.drawImage(state.img, 0, 0, w, h);
+                ctx.filter = 'none';
+            }
+
+            if (state.mode === 'bubble') {
+                const text = document.getElementById('bubbleText').value;
+                const fontSize = parseInt(document.getElementById('bubbleSize').value);
+                const padding = parseInt(document.getElementById('bubblePadding').value);
+                const x = canvas.width * state.bubbleX;
+                const y = canvas.height * state.bubbleY;
+                drawSpeechBubble(ctx, x, y, text, fontSize, padding);
+            }
+
+            // Fit Canvas CSS
+            const container = dropZone.getBoundingClientRect();
+            const maxWidth = container.width - 40;
+            const maxHeight = container.height - 40;
+            const scale = Math.min(maxWidth / canvas.width, maxHeight / canvas.height);
+            canvas.style.width = `${canvas.width * scale}px`;
+            canvas.style.height = `${canvas.height * scale}px`;
+
+            updateStats();
+        }
+
+        function updateStats() {
+            const canvas = state.canvas;
+            const statsBar = document.getElementById('imageStats');
+            
+            // Show stats bar
+            statsBar.classList.remove('opacity-0', 'translate-y-4');
+            
+            // Instant Updates: Dimensions & Resolution
+            const w = canvas.width;
+            const h = canvas.height;
+            const mp = (w * h / 1000000).toFixed(1);
+            
+            document.getElementById('stat-dim').innerText = `${w} x ${h} px`;
+            document.getElementById('stat-res').innerText = `${mp} MP`;
+
+            // Debounced Heavy Update: Filesize
+            clearTimeout(state.statsTimeout);
+            document.getElementById('stat-size').style.opacity = '0.5'; 
+            
+            state.statsTimeout = setTimeout(() => {
+                // Calculate estimate size (Base64 length * 0.75 is roughly bytes)
+                try {
+                    const url = canvas.toDataURL('image/png');
+                    const sizeBytes = Math.round((url.length - 22) * 0.75); 
+                    document.getElementById('stat-size').innerText = formatBytes(sizeBytes);
+                    document.getElementById('stat-size').style.opacity = '1';
+                } catch (e) {
+                    document.getElementById('stat-size').innerText = "Err";
+                }
+            }, 500); 
+        }
+
+        function formatBytes(bytes, decimals = 1) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        function drawSpeechBubble(ctx, x, y, text, fontSize, padding) {
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            const metrics = ctx.measureText(text);
+            const textWidth = metrics.width;
+            const boxWidth = textWidth + (padding * 2);
+            const boxHeight = fontSize + (padding * 2);
+            
+            const bx = x - boxWidth / 2;
+            const by = y - boxHeight / 2;
+            const r = Math.min(20, boxHeight/2);
+
+            ctx.beginPath();
+            ctx.moveTo(bx + r, by);
+            ctx.lineTo(bx + boxWidth - r, by);
+            ctx.quadraticCurveTo(bx + boxWidth, by, bx + boxWidth, by + r);
+            ctx.lineTo(bx + boxWidth, by + boxHeight - r);
+            ctx.quadraticCurveTo(bx + boxWidth, by + boxHeight, bx + boxWidth - r, by + boxHeight);
+
+            // Tail Logic
+            if (state.tailDirection === 'right') {
+                const tailStart = bx + boxWidth - Math.min(40, boxWidth * 0.3);
+                const tailEnd = bx + boxWidth - Math.min(10, boxWidth * 0.1);
+                ctx.lineTo(tailEnd, by + boxHeight);
+                ctx.lineTo(tailEnd + 10, by + boxHeight + 25);
+                ctx.lineTo(tailStart, by + boxHeight);
+            } else if (state.tailDirection === 'left') {
+                const tailStart = bx + Math.min(10, boxWidth * 0.1);
+                const tailEnd = bx + Math.min(40, boxWidth * 0.3);
+                ctx.lineTo(tailEnd, by + boxHeight);
+                ctx.lineTo(tailStart - 10, by + boxHeight + 25);
+                ctx.lineTo(tailStart, by + boxHeight);
+            }
+            // If none, we just skip the tail drawing part, closing the box immediately
+
+            ctx.lineTo(bx + r, by + boxHeight);
+            ctx.quadraticCurveTo(bx, by + boxHeight, bx, by + boxHeight - r);
+            ctx.lineTo(bx, by + r);
+            ctx.quadraticCurveTo(bx, by, bx + r, by);
+            ctx.closePath();
+
+            ctx.fillStyle = 'white';
+            ctx.fill();
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.fillStyle = 'black';
+            ctx.fillText(text, x, y + (fontSize * 0.1));
+        }
+
+        // --- Resize Logic ---
+
+        function updateResize(changed) {
+            const wInput = document.getElementById('resizeW');
+            const hInput = document.getElementById('resizeH');
+            const pctInput = document.getElementById('resizePct');
+            const pctDisplay = document.getElementById('pct-display');
+            const maintain = document.getElementById('maintainAspect').checked;
+            const ratio = state.originalW / state.originalH;
+
+            if (changed === 'pct') {
+                const pct = parseInt(pctInput.value);
+                pctDisplay.innerText = pct + '%';
+                wInput.value = Math.round(state.originalW * (pct / 100));
+                hInput.value = Math.round(state.originalH * (pct / 100));
+            } else if (changed === 'pct-reset') {
+                // Reset UI to 100%
+                pctInput.value = 100;
+                pctDisplay.innerText = '100%';
+            } else {
+                // Pixel inputs changed
+                let w = parseInt(wInput.value);
+                let h = parseInt(hInput.value);
+                if (maintain) {
+                    if (changed === 'w') {
+                        hInput.value = Math.round(w / ratio);
+                    } else {
+                        wInput.value = Math.round(h * ratio);
+                    }
+                }
+                // Recalculate pct approximate
+                const newPct = Math.round((parseInt(wInput.value) / state.originalW) * 100);
+                pctInput.value = Math.min(200, Math.max(1, newPct));
+                pctDisplay.innerText = newPct + '%';
+            }
+        }
+
+        function applyResize() {
+            if (!state.img) return;
+            const w = parseInt(document.getElementById('resizeW').value);
+            const h = parseInt(document.getElementById('resizeH').value);
+            
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = w;
+            tempCanvas.height = h;
+            const tCtx = tempCanvas.getContext('2d');
+            
+            const brightness = parseInt(document.getElementById('filter-bright').value);
+            const contrast = parseInt(document.getElementById('filter-contrast').value);
+            tCtx.filter = `brightness(${100 + brightness}%) contrast(${100 + contrast}%)`;
+            
+            tCtx.drawImage(state.img, 0, 0, w, h);
+            
+            state.img.src = tempCanvas.toDataURL();
+            state.img.onload = () => {
+                state.originalW = w;
+                state.originalH = h;
+                // Reset scale to 100% visually as this is now the new base
+                document.getElementById('resizePct').value = 100;
+                document.getElementById('pct-display').innerText = '100%';
+                render();
+                showToast("Image resized successfully");
+            }
+        }
+
+        // --- Batch Processing ---
+
+        function handleBatchSelect(files) {
+            const count = files ? files.length : 0;
+            document.getElementById('batch-count').innerText = `${count} files selected`;
+        }
+
+        async function processBatch() {
+            const files = document.getElementById('batchInput').files;
+            const resultsDiv = document.getElementById('batch-results');
+            const scale = parseInt(document.getElementById('batchScale').value) / 100;
+            
+            if (!files || files.length === 0) {
+                showToast("No files selected for batch!", true);
+                return;
+            }
+
+            resultsDiv.innerHTML = ''; // Clear old results
+            showToast(`Processing ${files.length} images...`);
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                
+                try {
+                    // Create a temporary bitmap to avoid DOM img loading mess
+                    const bitmap = await createImageBitmap(file);
+                    
+                    const w = Math.round(bitmap.width * scale);
+                    const h = Math.round(bitmap.height * scale);
+                    
+                    const cvs = document.createElement('canvas');
+                    cvs.width = w;
+                    cvs.height = h;
+                    const ctx = cvs.getContext('2d');
+                    ctx.drawImage(bitmap, 0, 0, w, h);
+                    
+                    // Generate blob
+                    const blob = await new Promise(resolve => cvs.toBlob(resolve, 'image/png'));
+                    const url = URL.createObjectURL(blob);
+                    
+                    // Create UI Item
+                    const div = document.createElement('div');
+                    div.className = "flex items-center justify-between bg-slate-700 p-2 rounded text-xs";
+                    div.innerHTML = `
+                        <span class="truncate max-w-[120px] text-slate-300">${file.name}</span>
+                        <a href="${url}" download="resized_${file.name}" class="text-blue-400 hover:text-blue-300 font-bold px-2">Download</a>
+                    `;
+                    resultsDiv.appendChild(div);
+                    
+                } catch (err) {
+                    console.error(err);
+                    const div = document.createElement('div');
+                    div.className = "text-red-400 text-xs p-1";
+                    div.innerText = `Error processing ${file.name}`;
+                    resultsDiv.appendChild(div);
+                }
+            }
+            showToast("Batch processing complete!");
+        }
+
+
+        // --- Common Utils ---
+
+        function applyMerge() {
+            if(!state.img2) {
+                showToast("Please load a second image first", true);
+                return;
+            }
+            const snapshot = state.canvas.toDataURL();
+            const newImg = new Image();
+            newImg.onload = () => {
+                state.img = newImg;
+                state.img2 = null;
+                state.originalW = newImg.width;
+                state.originalH = newImg.height;
+                
+                document.getElementById('resizeW').value = newImg.width;
+                document.getElementById('resizeH').value = newImg.height;
+                
+                showToast("Images merged into one!");
+                
+                // Lock future merges until refresh
+                state.mergeLocked = true;
+                
+                // Reset UI state for merge
+                checkMergeState();
+                render();
+            };
+            newImg.src = snapshot;
+        }
+
+        function addAnotherBubble() {
+            const snapshot = state.canvas.toDataURL();
+            const newImg = new Image();
+            newImg.onload = () => {
+                state.img = newImg;
+                document.getElementById('bubbleText').value = ""; 
+                showToast("Bubble stamped! Add another?");
+                render();
+            };
+            newImg.src = snapshot;
+        }
+
+        function handleMouseDown(e) {
+            if(state.mode !== 'bubble') return;
+            state.isDragging = true;
+        }
+
+        function handleMouseMove(e) {
+            if(!state.isDragging || state.mode !== 'bubble') return;
+            
+            const rect = state.canvas.getBoundingClientRect();
+            const scaleX = state.canvas.width / rect.width;
+            const scaleY = state.canvas.height / rect.height;
+            
+            let clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+            let clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+
+            const x = (clientX - rect.left) * scaleX;
+            const y = (clientY - rect.top) * scaleY;
+            
+            state.bubbleX = x / state.canvas.width;
+            state.bubbleY = y / state.canvas.height;
+            render();
+        }
+
+        function handleMouseUp() {
+            state.isDragging = false;
+        }
+
+        function applyFilters(ctx, b, c) {
+             ctx.filter = `brightness(${100 + b}%) contrast(${100 + c}%)`;
+        }
+
+        function downloadImage() {
+            if (!state.img) return;
+            const link = document.createElement('a');
+            link.download = 'edited-image.png';
+            link.href = state.canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        function showToast(msg, isError = false) {
+            const toast = document.createElement('div');
+            toast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white text-sm font-medium transform transition-all duration-500 translate-y-10 opacity-0 z-50 ${isError ? 'bg-red-600' : 'bg-blue-600'}`;
+            toast.innerText = msg;
+            document.body.appendChild(toast);
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-10', 'opacity-0');
+            });
+            setTimeout(() => {
+                toast.classList.add('translate-y-10', 'opacity-0');
+                setTimeout(() => toast.remove(), 500);
+            }, 3000);
+        }
+
+    </script>
+</body>
+</html>
